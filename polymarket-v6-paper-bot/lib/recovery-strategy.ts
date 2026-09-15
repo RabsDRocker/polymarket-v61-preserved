@@ -1,0 +1,16 @@
+import {simulateBuy} from "./execution.ts";
+import {probabilityAboveTarget} from "./value-strategy.ts";
+type Book={bids:{price:string;size:string}[];asks:{price:string;size:string}[]};
+export const recoveryPolicy={version:"v4",independentOpening:true,openingDollarsPerSide:4,openingRetrySeconds:45,observationSeconds:150,decisionGraceSeconds:20,minimumWinnerProbability:.55,minimumProbabilityEdge:0,lateConfirmationEnabled:true,lateMarketProbability:.85,targetProfit:1,maxRecoveryDollars:15,maxLateAddDollars:5,maxMarketCost:23,maxPortfolioExposure:30,maxOpeningWorstCaseLoss:1000,minimumEquityToTrade:0,minimumFillRatio:.90} as const;
+export function recoveryBudgetForProbability(){return recoveryPolicy.maxRecoveryDollars}
+export function missingOpeningSides(existing:{outcome:string}[]){return (["Up","Down"] as const).filter(side=>!existing.some(action=>action.outcome===side))}
+export function isFeedFresh(lastMessageMs:number,nowMs:number,maxAgeMs=30_000){return lastMessageMs>0&&nowMs-lastMessageMs<=maxAgeMs}
+export function extractChainlinkPoints(payload:any):{asset:"BTC"|"ETH";price:number;at:number}[]{const symbol=String(payload?.symbol||"").toLowerCase(),asset=(symbol==="btc/usd"?"BTC":symbol==="eth/usd"?"ETH":null) as "BTC"|"ETH"|null;if(!asset)return [];const rows=Array.isArray(payload?.data)?payload.data:[payload];return rows.map((row:any)=>({asset,price:Number(row?.value),at:Number(row?.timestamp||Date.now())})).filter((row:any)=>Number.isFinite(row.price)&&row.price>0&&Number.isFinite(row.at)).sort((a:any,b:any)=>a.at-b.at)}
+export function isHalfwayDecisionTime(minutes:number,elapsedSeconds:number){return minutes===5&&elapsedSeconds>=recoveryPolicy.observationSeconds&&elapsedSeconds<=recoveryPolicy.observationSeconds+recoveryPolicy.decisionGraceSeconds}
+export function chooseLateWinner(input:{current:number;target:number;secondsRemaining:number;sigmaPerRootSecond:number}){const up=probabilityAboveTarget(input.current,input.target,input.secondsRemaining,input.sigmaPerRootSecond);return {side:(up>=.5?"Up":"Down") as "Up"|"Down",probability:Math.max(up,1-up),upProbability:up}}
+export function sizeRecoveryBuy(input:{book:Book;existingWinnerShares:number;totalMarketCost:number;availableCash:number;currentMarketCost:number;maxAdditionalDollars?:number;modelProbability?:number}){
+  const p=recoveryPolicy,currentProjected=input.existingWinnerShares-input.totalMarketCost;if(currentProjected>=p.targetProfit)return {action:"skip" as const,reason:`The selected side already projects at least $${p.targetProfit.toFixed(2)} profit`};
+  const cap=Math.min(input.maxAdditionalDollars??p.maxRecoveryDollars,input.availableCash,p.maxMarketCost-input.currentMarketCost);if(cap<5)return {action:"skip" as const,reason:"Less than $5 remained inside the recovery cap"};
+  for(let budget=5;budget<=cap+1e-9;budget+=.25){const fill=simulateBuy(input.book,budget),projectedProfit=input.existingWinnerShares+fill.shares-input.totalMarketCost-fill.spent;if(fill.fillRatio>=p.minimumFillRatio&&projectedProfit>=p.targetProfit)return {action:"buy" as const,budget,fill,projectedProfit,reason:`Smallest visible-depth fill targeting $${p.targetProfit.toFixed(2)} profit if the selected side wins`}}
+  return {action:"skip" as const,reason:`Recovery required more than the $${cap.toFixed(2)} safety cap`};
+}

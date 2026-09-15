@@ -1,0 +1,20 @@
+{
+  "name": "polymarket-live-execution-sidecar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "check": "node --experimental-strip-types src/cli.ts check",
+    "auth-check": "node --experimental-strip-types src/cli.ts auth-check",
+    "migrate": "node --experimental-strip-types src/cli.ts migrate",
+    "status": "node --experimental-strip-types src/cli.ts status",
+    "start": "node --experimental-strip-types src/service.ts"
+  },
+  "dependencies": {
+    "@polymarket/bindings": "0.8.0",
+    "@polymarket/client": "0.8.1",
+    "viem": "2.46.3"
+  }
+}

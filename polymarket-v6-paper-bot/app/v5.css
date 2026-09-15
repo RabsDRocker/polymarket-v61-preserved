@@ -1,0 +1,58 @@
+.status {
+  white-space: nowrap;
+}
+
+.status.reconnecting span,
+.status.stopped span {
+  background: var(--red);
+}
+
+.status.starting span {
+  background: #f0c44b;
+}
+
+.hero {
+  grid-template-columns: 2fr repeat(4, 1fr);
+}
+
+.v5-row {
+  grid-template-columns: auto minmax(260px, 2fr) repeat(3, minmax(95px, auto));
+}
+
+.event-row mark.observe {
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 34px 0;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.bot-switch {
+  display: inline-block;
+  margin-top: 14px;
+  color: #697c22;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 800px) {
+  header {
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .v5-row {
+    grid-template-columns: auto 1fr;
+  }
+
+  .v5-row > div:nth-last-child(-n + 3) {
+    display: none;
+  }
+}

@@ -1,0 +1,52 @@
+import {adaptiveV61Query as q} from "../../lib/recovery-db";
+import {v61Policy as p} from "../../lib/v6-strategy";
+import {displayStreamStatus,streamStatusLabel} from "../../lib/stream-health";
+import {readLiveStatus} from "../../lib/live-status";
+import "../v6/v6.css";
+import "./v61.css";
+
+export const dynamic="force-dynamic";
+const money=(n:number)=>new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(n||0));
+const pct=(n:number)=>`${(Number(n||0)*100).toFixed(1)}%`;
+
+function EquityPlot({rows}:{rows:any[]}){
+  const samples=rows.filter((_:any,i:number)=>i%Math.max(1,Math.ceil(rows.length/80))===0||i===rows.length-1);
+  const values=samples.map((x:any)=>Number(x.equity)),lo=Math.min(1000,...values),hi=Math.max(1000,...values),range=hi-lo||1;
+  return <div className="v61-equity-plot" aria-label="Recent paper equity history">{values.map((value:number,i:number)=>{
+    const previous=values[Math.max(0,i-1)];
+    return <i key={i} className={value>=previous?"rise":"fall"} style={{height:`${12+(value-lo)/range*88}%`}} title={money(value)}/>;
+  })}</div>;
+}
+
+function MarketBars({rows}:{rows:any[]}){
+  const peak=Math.max(1,...rows.map((x:any)=>Math.abs(Number(x.pnl))));
+  return <div className="v61-market-bars">{rows.map((x:any,i:number)=><div key={`${x.slug}-${i}`} title={`BTC ${x.minutes}m · ${money(x.pnl)}`}><i className={Number(x.pnl)>=0?"gain":"loss"} style={{height:`${Math.max(7,Math.abs(Number(x.pnl))/peak*100)}%`}}/><small>{x.minutes}m</small></div>)}</div>;
+}
+
+export default function V61(){
+  const live=readLiveStatus();
+  const account=q<any>("SELECT * FROM account WHERE id=1")[0]||{starting_balance:1000};
+  const snaps=q<any>("SELECT * FROM snapshots ORDER BY id DESC LIMIT 240").reverse();
+  const snap=snaps.at(-1)||{equity:1000,available_cash:1000,deployed:0,realized_pnl:0,unrealized_pnl:0};
+  const state=q<any>("SELECT * FROM stream_state WHERE id=1")[0],status=displayStreamStatus(state);
+  const decisions=q<any>("SELECT d.*,m.minutes FROM decisions d LEFT JOIN markets m ON m.slug=d.slug ORDER BY d.created_at DESC LIMIT 28");
+  const actions=q<any>("SELECT * FROM actions ORDER BY id DESC LIMIT 40");
+  const positions=q<any>("SELECT * FROM positions ORDER BY updated_at DESC LIMIT 160");
+  const recent=q<any>("SELECT p.slug,p.minutes,SUM(p.realized_pnl) pnl,MAX(p.closed_at) closed_at FROM positions p WHERE p.status IN ('won','lost','sold') GROUP BY p.slug,p.minutes ORDER BY closed_at DESC LIMIT 20").reverse();
+  const closed=positions.filter((x:any)=>["won","lost","sold"].includes(x.status)),open=positions.filter((x:any)=>x.status==="open");
+  const pnl=Number(snap.equity)-Number(account.starting_balance),active=decisions[0],up=Number(active?.up_probability||.5);
+  const profitable=recent.filter((x:any)=>Number(x.pnl)>0).length,exits=actions.filter((x:any)=>x.phase==="adaptive_exit").length,hedges=actions.filter((x:any)=>x.phase==="micro_hedge").length;
+  const by5=closed.filter((x:any)=>x.minutes===5).reduce((s:number,x:any)=>s+Number(x.realized_pnl||0),0),by15=closed.filter((x:any)=>x.minutes===15).reduce((s:number,x:any)=>s+Number(x.realized_pnl||0),0),horizonTotal=Math.max(1,Math.abs(by5)+Math.abs(by15));
+  const avgFill=actions.length?actions.reduce((s:number,x:any)=>s+Number(x.fill_ratio||0),0)/actions.length:0;
+  return <main className="v6-shell v61-shell">
+    <header className="v6-head v61-head"><div><span className="eyebrow">PAPER RESEARCH · ADAPTIVE DIRECTIONAL EXECUTION</span><h1>Adaptive <i>Pulse</i> V6.1</h1><p>BTC 5-minute + 15-minute · distance, volatility, momentum, flow and executable value—recalculated continuously.</p></div><div className={`status ${status}`}><span/> {streamStatusLabel(status)}</div></header>
+    <section className="v61-live"><div className="v61-live-title"><span className={live.armed&&live.healthy?"armed":"stopped"}/><div><small>REAL-MONEY ACCOUNT</small><h2>{live.armed&&live.healthy?"Live execution armed":"Live execution stopped"}</h2></div><em>{live.updatedAt?`Updated ${new Date(live.updatedAt).toLocaleTimeString()}`:"Waiting for reconciliation"}</em></div><div className="v61-live-grid"><div className="primary"><small>Actual capital</small><strong>{money(live.equityUsd)}</strong><em>cash plus live positions</em></div><div><small>Available cash</small><strong>{money(live.collateralUsd)}</strong><em>Polymarket collateral</em></div><div><small>Live position value</small><strong>{money(live.positionValueUsd)}</strong><em>{money(live.exposureUsd)} cost exposure</em></div><div><small>Daily P&amp;L</small><strong className={live.dailyPnlUsd>=0?"positive":"negative"}>{money(live.dailyPnlUsd)}</strong><em>{money(live.dailyLossLimitUsd)} loss limit</em></div><div><small>Live orders</small><strong>{live.accepted}</strong><em>{live.openOrders} open · {live.unknown} unknown</em></div></div></section>
+    <section className="v6-kpis v61-kpis"><div className="primary"><small>Paper equity</small><strong className={pnl>=0?"positive":"negative"}>{money(snap.equity)}</strong><em>{money(pnl)} total P&amp;L</em></div><div><small>Available cash</small><strong>{money(snap.available_cash)}</strong><em>{money(snap.deployed)} deployed</em></div><div><small>Realized</small><strong>{money(snap.realized_pnl)}</strong><em>{money(snap.unrealized_pnl)} open</em></div><div><small>Recent market wins</small><strong>{recent.length?Math.round(profitable/recent.length*100):0}%</strong><em>{profitable}/{recent.length} markets</em></div><div><small>Live books</small><strong>{state?.subscribed_tokens||0}</strong><em>outcome tokens</em></div></section>
+    <section className="v61-top"><article className="chart-card"><div className="card-head"><div><small>EQUITY TRAJECTORY</small><h2>Account pulse</h2></div><b>{snaps.length} samples</b></div><EquityPlot rows={snaps}/><div className="v61-scale"><span>{money(Math.min(1000,...snaps.map((x:any)=>Number(x.equity))))}</span><span>Now {money(snap.equity)}</span></div></article><article><div className="card-head"><div><small>RECENT MARKET P&amp;L</small><h2>Outcome rhythm</h2></div><b>{recent.length} settled</b></div><MarketBars rows={recent}/><div className="v61-legend"><span><i className="gain"/>Profit</span><span><i className="loss"/>Loss</span></div></article><article className="v61-signal"><small>LIVE CONVICTION</small><h2>{active?`BTC ${active.minutes}m · ${active.winner}`:"Synchronizing"}</h2><div className="prob"><span style={{width:`${up*100}%`}}>UP {Math.round(up*100)}%</span><b>DOWN {Math.round((1-up)*100)}%</b></div><div className="v61-signal-grid"><span>Spot<b>{active?.spot?Number(active.spot).toFixed(2):"—"}</b></span><span>Target<b>{active?.target?Number(active.target).toFixed(2):"—"}</b></span><span>Remaining<b>{active?`${Math.max(0,Number(active.seconds_remaining)).toFixed(0)}s`:"—"}</b></span><span>Volatility<b>{active?.volatility?Number(active.volatility).toExponential(2):"—"}</b></span></div><p>{active?.reason||"Waiting for synchronized market and price samples."}</p></article></section>
+    <section className="v61-mid"><article><small>OPEN RISK</small><h2>Capital in motion</h2><div className="v61-donut-wrap"><div className="v61-donut" style={{background:`conic-gradient(#63e6ff 0 ${snap.deployed?Number(snap.deployed)/(Number(snap.available_cash)+Number(snap.deployed))*100:0}%,#243943 0)`}}><b>{money(snap.deployed)}</b><span>deployed</span></div><div className="v61-key"><span><i className="deployed"/>Open positions {open.length}</span><span><i className="cash"/>Cash {money(snap.available_cash)}</span><span><i className="fill"/>Recent fill {pct(avgFill)}</span></div></div></article><article><small>TIMEFRAME CONTRIBUTION</small><h2>5m versus 15m</h2><div className="v61-horizon"><div><span>BTC 5 minute</span><b className={by5>=0?"positive":"negative"}>{money(by5)}</b><i><em style={{width:`${Math.abs(by5)/horizonTotal*100}%`}}/></i></div><div><span>BTC 15 minute</span><b className={by15>=0?"positive":"negative"}>{money(by15)}</b><i><em style={{width:`${Math.abs(by15)/horizonTotal*100}%`}}/></i></div></div></article><article><small>EXECUTION HEALTH</small><h2>How V6.1 protects itself</h2><ul className="v61-rules"><li><b>{pct(p.minimumProbability)}</b> minimum confidence</li><li><b>{pct(p.minimumNetEdge)}</b> net edge after costs</li><li><b>{pct(p.minimumFillRatio)}</b> visible-depth fill required</li><li><b>{exits}</b> exits in recent tape</li><li><b>{hedges}</b> micro-hedges in recent tape</li></ul></article></section>
+    <section className="strategy-strip v61-flow"><div><small>01</small><b>Synchronize feeds</b><span>Chainlink + Binance + order book</span></div><i>→</i><div><small>02</small><b>Estimate probability</b><span>Distance + time + volatility</span></div><i>→</i><div><small>03</small><b>Demand an edge</b><span>Price + fee + slippage reserve</span></div><i>→</i><div><small>04</small><b>Manage continuously</b><span>Hold, exit or micro-hedge</span></div></section>
+    <section className="v6-ledger v61-ledger"><div className="card-head"><div><small>DECISION TAPE</small><h2>Why V6.1 acts—or waits</h2></div><b>live</b></div>{decisions.map((d:any)=><div className="v6-row" key={d.slug}><mark className={d.action.includes("buy")?"trade":d.action==="manage"?"manage":"watch"}>{d.action.replaceAll("_"," ")}</mark><div><b>BTC {d.minutes}m · {d.winner}</b><span>{d.reason}</span></div><strong>{pct(d.probability)}</strong><span>{Math.max(0,Number(d.seconds_remaining)).toFixed(0)}s</span></div>)}</section>
+    <section className="v6-bottom v61-bottom"><article><div className="card-head"><div><small>EXECUTION LEDGER</small><h2>Latest paper actions</h2></div><b>{actions.length}</b></div>{actions.slice(0,18).map((a:any)=><div className="compact" key={a.id}><span><b>{a.outcome} · {a.phase.replaceAll("_"," ")}</b><small>{a.market}</small></span><strong>{money(a.spent)}</strong></div>)}</article><article><div className="card-head"><div><small>ACTIVE PARAMETERS</small><h2>Experiment controls</h2></div><b>{p.version}</b></div><div className="thresholds">{Object.entries(p).filter(([,v])=>typeof v==="number"||typeof v==="boolean").map(([k,v])=><div key={k}><span>{k.replaceAll(/([A-Z])/g," $1")}</span><b>{String(v)}</b></div>)}</div></article></section>
+    <footer><span>V6.1 · PAPER SIGNAL ENGINE + GUARDED LIVE EXECUTION</span><span>Last engine update {state?.updated_at?new Date(state.updated_at).toLocaleTimeString():"—"}</span></footer>
+  </main>;
+}
