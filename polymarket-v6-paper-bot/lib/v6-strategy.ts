@@ -42,6 +42,7 @@ export const v6Policy={
 export const v61Policy={
   ...v6Policy,
   version:"v6.1-adaptive",
+  dailyLossStop:null,
   maximumEntrySecondsRemaining:{...v6Policy.maximumEntrySecondsRemaining,15:360},
 } as const;
 
@@ -63,7 +64,7 @@ export function blendedUpProbability(input:{current:number;target:number;seconds
 
 export function decideV6Entry(input:{duration:V6Duration;secondsRemaining:number;intervalMove:number;upProbability:number;upAsk:number;downAsk:number;upSpread:number;downSpread:number;upFlow:number;downFlow:number;availableCash:number;durationExposure:number;combinedExposure:number;dailyPnl:number},p:v6PolicyShape=v6Policy){
   if(p.dailyProfitTarget!==null&&input.dailyPnl>=p.dailyProfitTarget)return {action:"wait" as const,reason:"Daily paper-profit target reached"};
-  if(input.dailyPnl<=-p.dailyLossStop)return {action:"wait" as const,reason:"Daily paper-loss stop reached"};
+  if(p.dailyLossStop!==null&&input.dailyPnl<=-p.dailyLossStop)return {action:"wait" as const,reason:"Daily paper-loss stop reached"};
   if(input.secondsRemaining<p.minimumSecondsRemaining[input.duration]||input.secondsRemaining>p.maximumEntrySecondsRemaining[input.duration])return {action:"wait" as const,reason:"Outside adaptive executable window"};
   const side:V6Side=input.upProbability>=.5?"Up":"Down",probability=side==="Up"?input.upProbability:1-input.upProbability;
   const ask=side==="Up"?input.upAsk:input.downAsk,spread=side==="Up"?input.upSpread:input.downSpread,flow=side==="Up"?input.upFlow:input.downFlow;
@@ -83,7 +84,7 @@ export function decideV6Entry(input:{duration:V6Duration;secondsRemaining:number
 }
 
 export type v6PolicyShape={
-  version:string;dailyProfitTarget:number|null;dailyLossStop:number;
+  version:string;dailyProfitTarget:number|null;dailyLossStop:number|null;
   minimumSecondsRemaining:{5:number;15:number};maximumEntrySecondsRemaining:{5:number;15:number};
   maximumSpread:number;mainEntrySecondsRemaining:number;mainEntryToleranceSeconds:number;
   impulseMinimumDollars:number;requireFlowConfirmation:boolean;flowImbalanceMinimum:number;
